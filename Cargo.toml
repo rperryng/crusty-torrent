@@ -7,5 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
+anyhow = "^1.0"
 bendy = "^0.2"
+log = "^0.4"
+env_logger = "^0.7"

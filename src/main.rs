@@ -7,22 +7,23 @@ extern crate anyhow;
 use anyhow::Result;
 use anyhow::anyhow;
 
-mod models;
-use crate::models::TorrentMetainfo;
+#[macro_use]
+extern crate log;
+
+mod bendy_ext;
+
+mod metainfo;
+use crate::metainfo::Metainfo;
 
 const GIMP_TORRENT : &str = "gimp-2.10.18-setup-2.exe.torrent";
 
-
 fn main() -> Result<()> {
-    println!("Hello, world!");
+    env_logger::init();
 
     let contents = fs::read(GIMP_TORRENT).unwrap();
-    let readable = String::from_utf8_lossy(&contents);
-    println!("raw: {}", readable);
-
-    let metainfo = TorrentMetainfo::from_bencode(contents.as_slice())
+    let metainfo = Metainfo::from_bencode(contents.as_slice())
         .map_err(|e| anyhow!("{:?}", e))?;
-    println!("success! read torrent file: {}", metainfo.info().piece_length());
+    info!("success! read torrent file: piece length is {} bytes", metainfo.info().piece_length());
 
     Ok(())
 }
