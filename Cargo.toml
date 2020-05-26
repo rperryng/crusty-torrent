@@ -1,5 +1,5 @@
 [package]
-name = "torrent-cli-rs"
+name = "crusty-torrent"
 version = "0.1.0"
 authors = ["Ryan <ryanperrynguyen@gmail.com>"]
 edition = "2018"
