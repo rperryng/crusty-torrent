@@ -1,5 +1,8 @@
 use std::convert::TryInto;
 
+extern crate url;
+use url::Url;
+
 use bendy::decoding::{FromBencode, Object, Error, ResultExt};
 use crate::bendy_ext::decode_option;
 
@@ -151,7 +154,7 @@ fn decode_files(value : Object) -> Result<Vec<SingleFile>, Error> {
 
 pub struct Metainfo {
     info: Info,
-    announce: String,
+    announce: Url,
     announce_list: Option<Vec<String>>,
     encoding: Option<String>,
 }
@@ -161,7 +164,7 @@ impl Metainfo {
         &self.info
     }
 
-    pub fn announce(&self) -> &str {
+    pub fn announce(&self) -> &Url {
         &self.announce
     }
 }
@@ -177,7 +180,10 @@ impl FromBencode for Metainfo {
         while let Some(pair) = dict.next_pair()? {
             match pair {
                 (b"info", value) => info = decode_option("info", value)?,
-                (b"announce", value) => announce = decode_option("announce", value)?,
+                (b"announce", value) => {
+                    let announce_raw = String::decode_bencode_object(value)?;
+                    announce = Some(Url::parse(&announce_raw)?);
+                },
 
                 (unknown_field, _) => {
                     info!("unhandled field '{}' while decoding 'metainfo' file", String::from_utf8_lossy(unknown_field));
