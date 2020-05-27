@@ -151,7 +151,7 @@ fn decode_files(value : Object) -> Result<Vec<SingleFile>, Error> {
 
 pub struct Metainfo {
     info: Info,
-    announce: Option<String>,
+    announce: String,
     announce_list: Option<Vec<String>>,
     encoding: Option<String>,
 }
@@ -159,6 +159,10 @@ pub struct Metainfo {
 impl Metainfo {
     pub fn info(&self) -> &Info {
         &self.info
+    }
+
+    pub fn announce(&self) -> &str {
+        &self.announce
     }
 }
 
@@ -182,6 +186,8 @@ impl FromBencode for Metainfo {
         }
 
         let info = info.ok_or_else(|| Error::missing_field("info"))?;
+        let announce = announce.ok_or_else(|| Error::missing_field("announce"))?;
+
         Ok(Metainfo { info, announce, announce_list, encoding })
     }
 }
