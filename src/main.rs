@@ -1,6 +1,6 @@
 use std::fs;
-use std::net::UdpSocket;
 
+#[macro_use]
 extern crate anyhow;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -8,17 +8,14 @@ use anyhow::anyhow;
 extern crate bendy;
 use bendy::decoding::FromBencode;
 
-extern crate url;
-use url::{Url, ParseError};
-
 #[macro_use]
 extern crate log;
 
 // Extensions to external crates
 mod bendy_ext;
-mod url_ext;
 
-// crates
+// Internal mods
+mod messages;
 mod metainfo;
 mod tracker;
 
@@ -39,7 +36,7 @@ fn main() -> Result<()> {
     info!("Announce URL: {}", metainfo.announce());
 
     // Socket
-    get_peers(metainfo.announce());
+    get_peers(metainfo.announce())?;
 
     Ok(())
 }

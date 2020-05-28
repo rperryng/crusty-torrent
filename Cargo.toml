@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 anyhow = "^1.0"
 bendy = "^0.2"
+byteorder = "^1"
 env_logger = "^0.7"
 log = "^0.4"
 url = "^2.1"
+rand = "^0.7"
