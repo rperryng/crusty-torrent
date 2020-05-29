@@ -7,6 +7,7 @@ use anyhow::anyhow;
 
 extern crate bendy;
 use bendy::decoding::FromBencode;
+use bendy::encoding::ToBencode;
 
 #[macro_use]
 extern crate log;
@@ -18,6 +19,7 @@ mod bendy_ext;
 mod messages;
 mod metainfo;
 mod tracker;
+mod type_ext;
 
 use crate::metainfo::Metainfo;
 use crate::tracker::get_peers;
@@ -31,12 +33,10 @@ fn main() -> Result<()> {
 
     // 1. get metainfo
     let metainfo = Metainfo::from_bencode(contents.as_slice())
-        .map_err(|e| anyhow!("{:?}", e))?;
-    info!("success! read torrent file: piece length is {} bytes", metainfo.info().piece_length());
-    info!("Announce URL: {}", metainfo.announce());
+        .or_else(|e| bail!("failed de-serializing metainfo bencode.  Error: {}", e))?;
 
     // Socket
-    get_peers(metainfo.announce())?;
+    get_peers(&metainfo)?;
 
     Ok(())
 }

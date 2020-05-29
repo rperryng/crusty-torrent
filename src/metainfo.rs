@@ -5,8 +5,7 @@ use url::Url;
 
 use bendy::decoding::{FromBencode, Object, Error, ResultExt};
 use crate::bendy_ext::decode_option;
-
-type Sha1 = [u8; 20];
+use crate::type_ext::Sha1;
 
 #[derive(Debug)]
 pub struct SingleFile {
@@ -154,7 +153,7 @@ fn decode_files(value : Object) -> Result<Vec<SingleFile>, Error> {
 
 pub struct Metainfo {
     info: Info,
-    announce: Url,
+    announce_url: Url,
     announce_list: Option<Vec<String>>,
     encoding: Option<String>,
 }
@@ -164,15 +163,15 @@ impl Metainfo {
         &self.info
     }
 
-    pub fn announce(&self) -> &Url {
-        &self.announce
+    pub fn announce_url(&self) -> &Url {
+        &self.announce_url
     }
 }
 
 impl FromBencode for Metainfo {
     fn decode_bencode_object(object: Object) -> Result<Self, Error> {
         let mut info = None;
-        let mut announce = None;
+        let mut announce: Option<String> = None;
         let mut announce_list = None;
         let mut encoding = None;
 
@@ -180,10 +179,7 @@ impl FromBencode for Metainfo {
         while let Some(pair) = dict.next_pair()? {
             match pair {
                 (b"info", value) => info = decode_option("info", value)?,
-                (b"announce", value) => {
-                    let announce_raw = String::decode_bencode_object(value)?;
-                    announce = Some(Url::parse(&announce_raw)?);
-                },
+                (b"announce", value) =>  announce = decode_option("announce", value)?,
 
                 (unknown_field, _) => {
                     info!("unhandled field '{}' while decoding 'metainfo' file", String::from_utf8_lossy(unknown_field));
@@ -192,8 +188,12 @@ impl FromBencode for Metainfo {
         }
 
         let info = info.ok_or_else(|| Error::missing_field("info"))?;
-        let announce = announce.ok_or_else(|| Error::missing_field("announce"))?;
+        let announce_url = announce
+            .map(|url_raw| Url::parse(&x))
+            .map(|url| url.map_err(op) )
+            .ok_or_else(|| Error::missing_field("announce"))?;
 
-        Ok(Metainfo { info, announce, announce_list, encoding })
+
+        Ok(Metainfo { info, announce_url, announce_list, encoding })
     }
 }
