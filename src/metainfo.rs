@@ -3,7 +3,7 @@ use std::convert::TryInto;
 extern crate url;
 use url::Url;
 
-use bendy::decoding::{FromBencode, Object, Error, ResultExt};
+use bendy::decoding::{Error, FromBencode, Object, ResultExt};
 use crate::bendy_ext::decode_option;
 use crate::type_ext::Sha1;
 
@@ -42,6 +42,15 @@ impl Info {
     pub fn piece_length(&self) -> u32 {
         self.piece_length
     }
+
+    pub fn size(&self) -> u64 {
+        match &(self.file_info) {
+            FileInfo::Single(file) => file.length as u64,
+            FileInfo::Multi(files) => {
+                files.files.iter().fold(0, |acc, f| acc + f.length) as u64
+            }
+        }
+    }
 }
 
 impl FromBencode for Info {
@@ -60,6 +69,7 @@ impl FromBencode for Info {
         // Multi file mode
         let mut files : Vec<SingleFile> = Vec::new();
 
+        // Save underlying byte representation for later
         let mut dict = object.try_into_dictionary()?;
         while let Some(pair) = dict.next_pair()? {
             match pair {
@@ -179,7 +189,7 @@ impl FromBencode for Metainfo {
         while let Some(pair) = dict.next_pair()? {
             match pair {
                 (b"info", value) => info = decode_option("info", value)?,
-                (b"announce", value) =>  announce = decode_option("announce", value)?,
+                (b"announce", value) => announce = decode_option("announce", value)?,
 
                 (unknown_field, _) => {
                     info!("unhandled field '{}' while decoding 'metainfo' file", String::from_utf8_lossy(unknown_field));
@@ -188,11 +198,8 @@ impl FromBencode for Metainfo {
         }
 
         let info = info.ok_or_else(|| Error::missing_field("info"))?;
-        let announce_url = announce
-            .map(|url_raw| Url::parse(&x))
-            .map(|url| url.map_err(op) )
-            .ok_or_else(|| Error::missing_field("announce"))?;
-
+        let announce = announce.ok_or_else(|| Error::missing_field("announce"))?;
+        let announce_url = Url::parse(&announce)?;
 
         Ok(Metainfo { info, announce_url, announce_list, encoding })
     }

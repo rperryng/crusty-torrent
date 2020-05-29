@@ -1,1 +1,1 @@
-RUST_LOG=debug cargo run
+RUST_LOG=debug RUST_BACKTRACE=1 cargo run

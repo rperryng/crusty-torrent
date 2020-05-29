@@ -42,7 +42,7 @@ impl ConnectRequest {
 
 impl ToUdpMsg for ConnectRequest {
     fn to_udp_msg(&self) -> Result<Vec<u8>> {
-        let  msg = Vec::new();
+        let mut msg = Vec::new();
         msg.write_u64::<BigEndian>(ConnectRequest::PROTOCOL_ID).unwrap();
         msg.write_u32::<BigEndian>(ConnectRequest::ACTION).unwrap();
         msg.write_u32::<BigEndian>(self.transaction_id).unwrap();
@@ -73,7 +73,7 @@ impl FromUdpMsg for ConnectResponse {
     fn from_udp_msg(msg: &[u8]) -> Result<ConnectResponse> {
         let mut c = Cursor::new(msg);
         let action = c.read_u32::<BigEndian>()?;
-        ensure!(action == ConnectResponse::ACTION, "message had wrong action: {}, expected {}", action, )
+        ensure!(action == ConnectResponse::ACTION, "message had wrong action: {}, expected {}", action, ConnectResponse::ACTION);
 
         let transaction_id = c.read_u32::<BigEndian>()?;
         let connection_id = c.read_u64::<BigEndian>()?;
@@ -83,7 +83,7 @@ impl FromUdpMsg for ConnectResponse {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum AnnounceRequestEvent {
     None = 0,
     Competed = 1,
@@ -107,15 +107,17 @@ pub struct AnnounceRequest {
     left: u64,
     uploaded: u64,
     event: AnnounceRequestEvent,
-    ip_address: u32, // default 0??
+    ip_address: Option<u32>, // default 0??
+    key: Option<u32>,
+    num_want: Option<i32>,
     port: u16,
 }
 
 impl AnnounceRequest {
     const ACTION: u32 = 1;
-    const IP_ADDRESS: u32 = 0;
-    const KEY: u32 = 0; // ??
-    const NUM_WANT: i32 = -1;
+    const DEFAULT_IP_ADDRESS: u32 = 0;
+    const DEFAULT_KEY: u32 = 0; // ??
+    const NUM_WANT_ALL: i32 = 0;
 
     pub fn new(
         connection_id: u64,
@@ -126,7 +128,6 @@ impl AnnounceRequest {
         left: u64,
         uploaded: u64,
         event: AnnounceRequestEvent,
-        ip_address: u32, // default 0??
         port: u16,
     ) -> AnnounceRequest {
         AnnounceRequest {
@@ -138,8 +139,10 @@ impl AnnounceRequest {
             left,
             uploaded,
             event,
-            ip_address, // default 0??
             port,
+            ip_address: None,
+            key: None,
+            num_want: None,
         }
     }
 }
@@ -151,12 +154,19 @@ impl ToUdpMsg for AnnounceRequest {
         msg.write_u32::<BigEndian>(AnnounceRequest::ACTION).unwrap();
         msg.write_u32::<BigEndian>(self.transaction_id).unwrap();
 
-        let a = self.info_hash.to_udp_msg()?;
-        msg.append(&mut self.info_hash.to_udp_msg()?);
+        msg.extend(self.info_hash.iter());
+        msg.extend(self.peer_id.iter());
 
+        msg.write_u64::<BigEndian>(self.downloaded)?;
+        msg.write_u64::<BigEndian>(self.left)?;
+        msg.write_u64::<BigEndian>(self.uploaded)?;
 
-        // info hash
-        msg.write_u32::<BigEndian>(AnnounceRequestEvent::Stopped.value()).unwrap();
+        msg.write_u32::<BigEndian>(self.event.value())?;
+        msg.write_u32::<BigEndian>(self.ip_address.unwrap_or(AnnounceRequest::DEFAULT_IP_ADDRESS))?;
+        msg.write_u32::<BigEndian>(self.key.unwrap_or(AnnounceRequest::DEFAULT_KEY))?;
+        msg.write_i32::<BigEndian>(self.num_want.unwrap_or(AnnounceRequest::NUM_WANT_ALL))?;
+        msg.write_u16::<BigEndian>(self.port)?;
+
         Ok(msg)
     }
 }

@@ -3,11 +3,8 @@ use std::fs;
 #[macro_use]
 extern crate anyhow;
 use anyhow::Result;
-use anyhow::anyhow;
-
 extern crate bendy;
 use bendy::decoding::FromBencode;
-use bendy::encoding::ToBencode;
 
 #[macro_use]
 extern crate log;
@@ -20,6 +17,7 @@ mod messages;
 mod metainfo;
 mod tracker;
 mod type_ext;
+mod util;
 
 use crate::metainfo::Metainfo;
 use crate::tracker::get_peers;
