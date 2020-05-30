@@ -16,7 +16,7 @@ pub trait ToUdpMsg {
 }
 
 pub trait FromUdpMsg {
-    fn from_udp_msg( msg: &[u8]) -> Result<Self>
+    fn from_udp_msg(msg: &[u8]) -> Result<Self>
     where
         Self: Sized;
 }
@@ -36,14 +36,17 @@ impl ConnectRequest {
     const ACTION: u32 = 0;
 
     pub fn new() -> ConnectRequest {
-        ConnectRequest { transaction_id: random() }
+        ConnectRequest {
+            transaction_id: random(),
+        }
     }
 }
 
 impl ToUdpMsg for ConnectRequest {
     fn to_udp_msg(&self) -> Result<Vec<u8>> {
         let mut msg = Vec::new();
-        msg.write_u64::<BigEndian>(ConnectRequest::PROTOCOL_ID).unwrap();
+        msg.write_u64::<BigEndian>(ConnectRequest::PROTOCOL_ID)
+            .unwrap();
         msg.write_u32::<BigEndian>(ConnectRequest::ACTION).unwrap();
         msg.write_u32::<BigEndian>(self.transaction_id).unwrap();
 
@@ -73,13 +76,21 @@ impl FromUdpMsg for ConnectResponse {
     fn from_udp_msg(msg: &[u8]) -> Result<ConnectResponse> {
         let mut c = Cursor::new(msg);
         let action = c.read_u32::<BigEndian>()?;
-        ensure!(action == ConnectResponse::ACTION, "message had wrong action: {}, expected {}", action, ConnectResponse::ACTION);
+        ensure!(
+            action == ConnectResponse::ACTION,
+            "message had wrong action: {}, expected {}",
+            action,
+            ConnectResponse::ACTION
+        );
 
         let transaction_id = c.read_u32::<BigEndian>()?;
         let connection_id = c.read_u64::<BigEndian>()?;
 
         assert_eq!(action, ConnectResponse::ACTION);
-        Ok(ConnectResponse { transaction_id, connection_id })
+        Ok(ConnectResponse {
+            transaction_id,
+            connection_id,
+        })
     }
 }
 
@@ -162,7 +173,10 @@ impl ToUdpMsg for AnnounceRequest {
         msg.write_u64::<BigEndian>(self.uploaded)?;
 
         msg.write_u32::<BigEndian>(self.event.value())?;
-        msg.write_u32::<BigEndian>(self.ip_address.unwrap_or(AnnounceRequest::DEFAULT_IP_ADDRESS))?;
+        msg.write_u32::<BigEndian>(
+            self.ip_address
+                .unwrap_or(AnnounceRequest::DEFAULT_IP_ADDRESS),
+        )?;
         msg.write_u32::<BigEndian>(self.key.unwrap_or(AnnounceRequest::DEFAULT_KEY))?;
         msg.write_i32::<BigEndian>(self.num_want.unwrap_or(AnnounceRequest::NUM_WANT_ALL))?;
         msg.write_u16::<BigEndian>(self.port)?;

@@ -1,9 +1,9 @@
 use std::io::Cursor;
 use std::net::UdpSocket;
 
-use crate::metainfo::Metainfo;
 use crate::messages;
 use crate::messages::{FromUdpMsg, ToUdpMsg};
+use crate::metainfo::Metainfo;
 use byteorder::{BigEndian, ReadBytesExt};
 
 extern crate url;
@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 extern crate rand;
 
 extern crate sha1;
-use sha1::{Sha1, Digest};
+use sha1::{Digest, Sha1};
 
 use crate::util::gen_peer_id;
 
@@ -31,13 +31,17 @@ pub fn get_peers(metainfo: &Metainfo) -> Result<()> {
     let announce_url = format!("{}:{}", host, port);
 
     info!("attempting to connect to announce_url: {}", announce_url);
-    socket.connect(announce_url).context("couldn't connect to announce_url")?;
+    socket
+        .connect(announce_url)
+        .context("couldn't connect to announce_url")?;
     info!("successfully connected to url");
 
     let connect_request = messages::ConnectRequest::new();
 
     info!("sending connect request: {:?}", connect_request);
-    socket.send(connect_request.to_udp_msg()?.as_slice()).context("failed to  send connect request")?;
+    socket
+        .send(connect_request.to_udp_msg()?.as_slice())
+        .context("failed to  send connect request")?;
     info!("Successfully sent connect request");
 
     let mut bytes_read: usize = 0;
@@ -51,13 +55,16 @@ pub fn get_peers(metainfo: &Metainfo) -> Result<()> {
                 let connect_response = messages::ConnectResponse::from_udp_msg(&buf)?;
                 send_announce(&socket, &metainfo, &connect_response)?;
                 Ok(connect_response)
-            },
+            }
             1 => {
-              info!("got announce response: {:?}", buf);
-              bail!("Cannot parse announce response yet");
+                info!("got announce response: {:?}", buf);
+                bail!("Cannot parse announce response yet");
             }
             // 1 => messages::AnnounceResponse::from_udp_msg(&buf),
-            unhandled => Err(anyhow!("Unhandled udp message with action code: {}", unhandled)),
+            unhandled => Err(anyhow!(
+                "Unhandled udp message with action code: {}",
+                unhandled
+            )),
         };
 
         info!("got message: {:?}", msg);
@@ -73,9 +80,9 @@ pub fn get_peers(metainfo: &Metainfo) -> Result<()> {
 }
 
 fn send_announce(
-  socket: &UdpSocket,
-  metainfo: &Metainfo,
-  connect_response: &messages::ConnectResponse,
+    socket: &UdpSocket,
+    metainfo: &Metainfo,
+    connect_response: &messages::ConnectResponse,
 ) -> Result<()> {
     info!("sending announce request");
     connect_response.transaction_id();
@@ -91,9 +98,9 @@ fn send_announce(
         connect_response.transaction_id(),
         info_hash,
         gen_peer_id(),
-        0, // downloaded
+        0,                      // downloaded
         metainfo.info().size(), // left
-        0, // uploaded
+        0,                      // uploaded
         messages::AnnounceRequestEvent::None,
         DEFAULT_ANNOUNCE_PORT,
     );

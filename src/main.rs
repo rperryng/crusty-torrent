@@ -22,7 +22,7 @@ mod util;
 use crate::metainfo::Metainfo;
 use crate::tracker::get_peers;
 
-const GIMP_TORRENT : &str = "gimp-2.10.18-setup-2.exe.torrent";
+const GIMP_TORRENT: &str = "gimp-2.10.18-setup-2.exe.torrent";
 
 fn main() -> Result<()> {
     env_logger::init();
