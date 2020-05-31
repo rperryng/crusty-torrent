@@ -1,4 +1,6 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
+use std::net::Ipv4Addr;
+use std::convert::TryInto;
 
 extern crate anyhow;
 use anyhow::Result;
@@ -16,6 +18,9 @@ extern crate sha1;
 use sha1::Digest;
 use sha1::Sha1 as Sha1Hasher;
 
+extern crate url;
+use url::Url;
+
 use crate::type_ext::Sha1;
 use crate::metainfo::Metainfo;
 
@@ -27,6 +32,22 @@ pub trait FromUdpMsg {
     fn from_udp_msg(msg: &[u8]) -> Result<Self>
     where
         Self: Sized;
+}
+
+#[derive(Debug)]
+pub struct PeerUrl {
+    ip: Ipv4Addr,
+    port: u16,
+}
+
+impl FromUdpMsg for PeerUrl {
+    fn from_udp_msg(msg: &[u8]) -> Result<Self>
+    where Self: Sized {
+        let ip: [u8; 4] = msg[..4].try_into()?;
+        let ip: Ipv4Addr = Ipv4Addr::from(ip);
+        let port: u16 = Cursor::new(&msg[4..6]).read_u16::<BigEndian>()?;
+        Ok(PeerUrl { ip, port })
+    }
 }
 
 pub enum Message {
@@ -137,7 +158,7 @@ impl AnnounceRequest {
     const DEFAULT_IP_ADDRESS: u32 = 0;
     const DEFAULT_PORT: u16 = 6881;
     const DEFAULT_KEY: u32 = 0; // ??
-    const NUM_WANT_ALL: i32 = 0;
+    const DEFAULT_NUM_WANT: i32 = 50;
 
     pub fn new(
         metainfo: &Metainfo,
@@ -191,9 +212,55 @@ impl ToUdpMsg for AnnounceRequest {
                 .unwrap_or(AnnounceRequest::DEFAULT_IP_ADDRESS),
         )?;
         msg.write_u32::<BigEndian>(self.key.unwrap_or(AnnounceRequest::DEFAULT_KEY))?;
-        msg.write_i32::<BigEndian>(self.num_want.unwrap_or(AnnounceRequest::NUM_WANT_ALL))?;
+        msg.write_i32::<BigEndian>(self.num_want.unwrap_or(AnnounceRequest::DEFAULT_NUM_WANT))?;
         msg.write_u16::<BigEndian>(self.port)?;
 
         Ok(msg)
+    }
+}
+
+#[derive(Debug)]
+pub struct AnnounceResponse {
+    transaction_id: u32,
+    interval: u32,
+    leechers: u32,
+    seeders: u32,
+    peers: Vec::<PeerUrl>,
+}
+
+impl AnnounceResponse {
+    const ACTION: u32 = 1;
+}
+
+impl FromUdpMsg for AnnounceResponse {
+    fn from_udp_msg(msg: &[u8]) -> Result<Self>
+    where Self: Sized {
+        let mut c = Cursor::new(msg);
+        let action = c.read_u32::<BigEndian>()?;
+        ensure!(
+            action == AnnounceResponse::ACTION,
+            "message had wrong action: {}, expected {}",
+            action,
+            AnnounceResponse::ACTION,
+        );
+
+        let transaction_id = c.read_u32::<BigEndian>()?;
+        let interval = c.read_u32::<BigEndian>()?;
+        let leechers = c.read_u32::<BigEndian>()?;
+        let seeders = c.read_u32::<BigEndian>()?;
+
+        let mut peers: Vec<PeerUrl> = Vec::new();
+        let mut buf: [u8; 6] = [0u8; 6];
+        while let Ok(_) = c.read_exact(&mut buf) {
+          peers.push(PeerUrl::from_udp_msg(&buf)?);
+        }
+
+        Ok(AnnounceResponse {
+          transaction_id,
+          interval,
+          leechers,
+          seeders,
+          peers,
+        })
     }
 }

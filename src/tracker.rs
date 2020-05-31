@@ -1,5 +1,6 @@
 use std::io::Cursor;
 use std::net::UdpSocket;
+use std::convert::TryInto;
 
 use crate::messages;
 use crate::messages::{FromUdpMsg, ToUdpMsg};
@@ -41,30 +42,24 @@ pub fn get_peers(metainfo: &Metainfo) -> Result<()> {
     info!("Successfully sent connect request");
 
     let mut _bytes_read: usize = 0;
-    let mut buf = [0u8; 20];
-
+    let mut buf = [0u8; 512];
     while let Ok(received) = socket.recv(&mut buf) {
-        let mut c = Cursor::new(buf);
+        let mut c = Cursor::new(buf.to_vec());
 
-        let msg = match c.read_u32::<BigEndian>()? {
+        match c.read_u32::<BigEndian>()? {
             0 => {
-                info!("got connect response: {:?}", &buf);
+                info!("got connect response");
                 let connect_response = messages::ConnectResponse::from_udp_msg(&buf)?;
                 send_announce(&socket, &metainfo, &connect_response)?;
-                Ok(connect_response)
             }
             1 => {
-                info!("got announce response: {:?}", String::from_utf8_lossy(&buf));
-                bail!("Cannot parse announce response yet");
+                info!("got announce response");
+                let response = messages::AnnounceResponse::from_udp_msg(&buf[..received])?;
+                info!("success!: {:?}", response);
             }
-            // 1 => messages::AnnounceResponse::from_udp_msg(&buf),
-            unhandled => Err(anyhow!(
-                "Unhandled udp message with action code: {}",
-                unhandled
-            )),
+            unhandled => bail!("Unhandled udp message with action code: {}", unhandled),
         };
 
-        info!("got message: {:?}", msg);
         _bytes_read += received;
     }
 
