@@ -12,15 +12,86 @@ use bendy::encoding::{SingleItemEncoder, ToBencode};
 
 #[derive(Debug)]
 pub struct SingleFile {
-    path: String,
+    name: String,
     length: u32,
     md5sum: Option<String>,
+}
+
+impl ToBencode for SingleFile {
+    const MAX_DEPTH: usize = 1;
+
+    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
+        encoder.emit_dict(|mut dict| {
+            dict.emit_pair(b"length", self.length)?;
+
+            if let Some(md5) = &self.md5sum {
+                dict.emit_pair(b"md5sum", md5)?;
+            }
+
+            dict.emit_pair(b"name", &self.name)?;
+
+            Ok(())
+        })?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct MultiFile {
+    length: u64,
+    md5sum: Option<String>,
+    path: Vec<String>,
+}
+
+impl ToBencode for MultiFile {
+    const MAX_DEPTH: usize = 3;
+
+    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
+        encoder.emit_dict(|mut dict| {
+            dict.emit_pair(b"length", self.length)?;
+
+            if let Some(md5) = &self.md5sum {
+                dict.emit_pair(b"md5sum", md5)?;
+            }
+
+            dict.emit_pair_with(b"path", |e| {
+                e.emit_list(|list| {
+                    for p in &self.path { list.emit(p)?; }
+                    Ok(())
+                })?;
+                Ok(())
+            })?;
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
 pub struct MultipleFiles {
     directory_name: String,
-    files: Vec<SingleFile>,
+    files: Vec<MultiFile>,
+}
+
+impl ToBencode for MultipleFiles {
+    const MAX_DEPTH: usize = 5;
+
+    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
+        encoder.emit_dict(|mut dict| {
+            dict.emit_pair(b"name", &self.directory_name)?;
+            dict.emit_pair_with(b"files", |e| {
+                e.emit_list(|list| {
+                    for f in &self.files { list.emit(f)? }
+                    Ok(())
+                })?;
+                Ok(())
+            })?;
+            Ok(())
+        })?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -32,15 +103,13 @@ pub enum FileInfo {
 impl ToBencode for FileInfo {
     const MAX_DEPTH: usize = 2;
 
-    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), Error> {
+    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         match self {
-            FileInfo::Single(single) => {
-
-            },
-            FileInfo::Multi(multi_files) => {
-            }
+            FileInfo::Single(single) => encoder.emit(single)?,
+            FileInfo::Multi(multi) => encoder.emit(multi)?
         }
-            Ok(());
+
+        Ok(())
     }
 }
 
@@ -83,9 +152,8 @@ impl FromBencode for Info {
         let mut md5sum = None;
 
         // Multi file mode
-        let mut files: Vec<SingleFile> = Vec::new();
+        let mut files: Vec<MultiFile> = Vec::new();
 
-        // Save underlying byte representation for later
         let mut dict = object.try_into_dictionary()?;
         while let Some(pair) = dict.next_pair()? {
             match pair {
@@ -115,7 +183,7 @@ impl FromBencode for Info {
 
         let file_info = match (length, files) {
             (Some(length), files) if files.is_empty() => Ok(FileInfo::Single(SingleFile {
-                path: name,
+                name,
                 length,
                 md5sum,
             })),
@@ -165,7 +233,7 @@ fn decode_private(value: Object) -> Result<bool, decoding::Error> {
         })
 }
 
-fn decode_files(value: Object) -> Result<Vec<SingleFile>, decoding::Error> {
+fn decode_files(value: Object) -> Result<Vec<MultiFile>, decoding::Error> {
     let mut list = value.try_into_list()?;
     let mut files = Vec::new();
 
@@ -193,7 +261,7 @@ fn decode_files(value: Object) -> Result<Vec<SingleFile>, decoding::Error> {
         let path = path.ok_or_else(|| decoding::Error::missing_field("path"))?;
         let length = length.ok_or_else(|| decoding::Error::missing_field("length"))?;
 
-        files.push(SingleFile {
+        files.push(MultiFile {
             path,
             length,
             md5sum,
@@ -216,11 +284,11 @@ impl ToBencode for Info {
             });
             dict.emit_pair(b"pieces", pieces)?;
 
-            if self.private.is_some() {
-                dict.emit_pair(b"private", self.private.unwrap() as u32)?;
+            if let Some(p) = &self.private {
+                dict.emit_pair(b"private", *p as u32)?;
             }
 
-            dict.emit_pair(b"file_info", self.file_info);
+            dict.emit_pair(b"file_info", &self.file_info)?;
 
             Ok(())
         })?;

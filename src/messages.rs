@@ -9,7 +9,15 @@ use rand::prelude::*;
 extern crate byteorder;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+extern crate bendy;
+use bendy::encoding::ToBencode;
+
+extern crate sha1;
+use sha1::Digest;
+use sha1::Sha1 as Sha1Hasher;
+
 use crate::type_ext::Sha1;
+use crate::metainfo::Metainfo;
 
 pub trait ToUdpMsg {
     fn to_udp_msg(&self) -> Result<Vec<u8>>;
@@ -127,34 +135,39 @@ pub struct AnnounceRequest {
 impl AnnounceRequest {
     const ACTION: u32 = 1;
     const DEFAULT_IP_ADDRESS: u32 = 0;
+    const DEFAULT_PORT: u16 = 6881;
     const DEFAULT_KEY: u32 = 0; // ??
     const NUM_WANT_ALL: i32 = 0;
 
     pub fn new(
-        connection_id: u64,
-        transaction_id: u32,
-        info_hash: Sha1,
+        metainfo: &Metainfo,
+        connect_response: &ConnectResponse,
         peer_id: Sha1,
-        downloaded: u64,
-        left: u64,
-        uploaded: u64,
-        event: AnnounceRequestEvent,
-        port: u16,
-    ) -> AnnounceRequest {
-        AnnounceRequest {
-            connection_id,
-            transaction_id,
+    ) -> Result<AnnounceRequest> {
+        let info_hash: Sha1 = metainfo
+            .info()
+            .to_bencode()
+            .map_err(|e| anyhow!("Failed to re-bencode metainfo: {}", e))
+            .map(|bencoded_info| {
+                let mut hasher = Sha1Hasher::new();
+                hasher.input(bencoded_info);
+                hasher.result().into()
+            })?;
+
+        Ok(AnnounceRequest {
+            connection_id: connect_response.connection_id,
+            transaction_id: connect_response.transaction_id,
             info_hash,
             peer_id,
-            downloaded,
-            left,
-            uploaded,
-            event,
-            port,
+            downloaded: 0,
+            left: metainfo.info().size(),
+            uploaded: 0,
+            event: AnnounceRequestEvent::None,
+            port: AnnounceRequest::DEFAULT_PORT,
             ip_address: None,
             key: None,
             num_want: None,
-        }
+        })
     }
 }
 
