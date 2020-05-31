@@ -34,7 +34,8 @@ fn main() -> Result<()> {
         .or_else(|e| bail!("failed de-serializing metainfo bencode.  Error: {}", e))?;
 
     // Socket
-    get_peers(&metainfo)?;
+    let peers = get_peers(&metainfo)?;
+    info!("Got peers: {:?}", peers.peers());
 
     Ok(())
 }

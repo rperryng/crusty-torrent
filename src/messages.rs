@@ -18,9 +18,6 @@ extern crate sha1;
 use sha1::Digest;
 use sha1::Sha1 as Sha1Hasher;
 
-extern crate url;
-use url::Url;
-
 use crate::type_ext::Sha1;
 use crate::metainfo::Metainfo;
 
@@ -61,8 +58,8 @@ pub struct ConnectRequest {
 }
 
 impl ConnectRequest {
+    pub const ACTION: u32 = 0;
     const PROTOCOL_ID: u64 = 0x41727101980;
-    const ACTION: u32 = 0;
 
     pub fn new() -> ConnectRequest {
         ConnectRequest {
@@ -90,7 +87,7 @@ pub struct ConnectResponse {
 }
 
 impl ConnectResponse {
-    const ACTION: u32 = 0;
+    pub const ACTION: u32 = 0;
 
     pub fn transaction_id(&self) -> u32 {
         self.transaction_id
@@ -154,7 +151,7 @@ pub struct AnnounceRequest {
 }
 
 impl AnnounceRequest {
-    const ACTION: u32 = 1;
+    pub const ACTION: u32 = 1;
     const DEFAULT_IP_ADDRESS: u32 = 0;
     const DEFAULT_PORT: u16 = 6881;
     const DEFAULT_KEY: u32 = 0; // ??
@@ -225,11 +222,15 @@ pub struct AnnounceResponse {
     interval: u32,
     leechers: u32,
     seeders: u32,
-    peers: Vec::<PeerUrl>,
+    peers: Vec<PeerUrl>,
 }
 
 impl AnnounceResponse {
-    const ACTION: u32 = 1;
+    pub const ACTION: u32 = 1;
+
+    pub fn peers(&self) -> &Vec<PeerUrl> {
+        &self.peers
+    }
 }
 
 impl FromUdpMsg for AnnounceResponse {

@@ -18,7 +18,7 @@ use crate::util::gen_peer_id;
 
 const UDP_ADDRESS: &str = "0.0.0.0:8000";
 
-pub fn get_peers(metainfo: &Metainfo) -> Result<()> {
+pub fn get_peers(metainfo: &Metainfo) -> Result<messages::AnnounceResponse> {
     let socket = UdpSocket::bind(UDP_ADDRESS).expect("couldn't bind to address");
     info!("UDP successfully binded to: {}", UDP_ADDRESS);
 
@@ -42,33 +42,29 @@ pub fn get_peers(metainfo: &Metainfo) -> Result<()> {
     info!("Successfully sent connect request");
 
     let mut _bytes_read: usize = 0;
-    let mut buf = [0u8; 512];
-    while let Ok(received) = socket.recv(&mut buf) {
-        let mut c = Cursor::new(buf.to_vec());
+    let mut buf = [0u8; 4];
 
-        match c.read_u32::<BigEndian>()? {
-            0 => {
-                info!("got connect response");
-                let connect_response = messages::ConnectResponse::from_udp_msg(&buf)?;
-                send_announce(&socket, &metainfo, &connect_response)?;
+    while let Ok(_received) = socket.peek(&mut buf) {
+        match Cursor::new(buf).read_u32::<BigEndian>()? {
+            messages::ConnectResponse::ACTION => {
+                let mut buf = [0u8; 16];
+                socket.recv(&mut buf)?;
+                let response = messages::ConnectResponse::from_udp_msg(&buf)?;
+                info!("got connect_response response: {:?}", response);
+                send_announce(&socket, &metainfo, &response)?;
             }
-            1 => {
-                info!("got announce response");
+            messages::AnnounceResponse::ACTION => {
+                let mut buf = [0u8; 512];
+                let received = socket.recv(&mut buf)?;
                 let response = messages::AnnounceResponse::from_udp_msg(&buf[..received])?;
-                info!("success!: {:?}", response);
+                info!("got announce response: {:?}", response);
+                return Ok(response);
             }
             unhandled => bail!("Unhandled udp message with action code: {}", unhandled),
-        };
-
-        _bytes_read += received;
+        }
     }
 
-    // 1. send connection request
-    // 2. receive / parse connect response
-    // 3. send announce request
-    // 4. pass peers back to client
-
-    Ok(())
+    Err(anyhow!("Error reading from socket"))
 }
 
 fn send_announce(
