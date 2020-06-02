@@ -1,32 +1,21 @@
+use std::convert::TryInto;
 use std::io::{Cursor, Read};
 use std::net::Ipv4Addr;
-use std::convert::TryInto;
 
-extern crate anyhow;
-use anyhow::Result;
-
-extern crate rand;
+use anyhow::{Result, ensure};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use log::info;
 use rand::prelude::*;
 
-extern crate byteorder;
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
-extern crate bendy;
-use bendy::encoding::ToBencode;
-
-extern crate sha1;
-use sha1::Digest;
-use sha1::Sha1 as Sha1Hasher;
-
-use crate::type_ext::Sha1;
 use crate::metainfo::Metainfo;
+use crate::type_ext::{PeerId, Sha1};
 
-pub trait ToUdpMsg {
-    fn to_udp_msg(&self) -> Result<Vec<u8>>;
+pub trait ToProtocolMsg {
+    fn to_protocol_msg(&self) -> Result<Vec<u8>>;
 }
 
-pub trait FromUdpMsg {
-    fn from_udp_msg(msg: &[u8]) -> Result<Self>
+pub trait FromProtocolMsg {
+    fn from_protocol_msg(msg: &[u8]) -> Result<Self>
     where
         Self: Sized;
 }
@@ -37,9 +26,21 @@ pub struct PeerUrl {
     port: u16,
 }
 
-impl FromUdpMsg for PeerUrl {
-    fn from_udp_msg(msg: &[u8]) -> Result<Self>
-    where Self: Sized {
+impl PeerUrl {
+    pub fn ip(&self) -> Ipv4Addr {
+        self.ip
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+}
+
+impl FromProtocolMsg for PeerUrl {
+    fn from_protocol_msg(msg: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
         let ip: [u8; 4] = msg[..4].try_into()?;
         let ip: Ipv4Addr = Ipv4Addr::from(ip);
         let port: u16 = Cursor::new(&msg[4..6]).read_u16::<BigEndian>()?;
@@ -68,14 +69,12 @@ impl ConnectRequest {
     }
 }
 
-impl ToUdpMsg for ConnectRequest {
-    fn to_udp_msg(&self) -> Result<Vec<u8>> {
+impl ToProtocolMsg for ConnectRequest {
+    fn to_protocol_msg(&self) -> Result<Vec<u8>> {
         let mut msg = Vec::new();
-        msg.write_u64::<BigEndian>(ConnectRequest::PROTOCOL_ID)
-            .unwrap();
-        msg.write_u32::<BigEndian>(ConnectRequest::ACTION).unwrap();
-        msg.write_u32::<BigEndian>(self.transaction_id).unwrap();
-
+        msg.write_u64::<BigEndian>(ConnectRequest::PROTOCOL_ID)?;
+        msg.write_u32::<BigEndian>(ConnectRequest::ACTION)?;
+        msg.write_u32::<BigEndian>(self.transaction_id)?;
         Ok(msg)
     }
 }
@@ -98,8 +97,8 @@ impl ConnectResponse {
     }
 }
 
-impl FromUdpMsg for ConnectResponse {
-    fn from_udp_msg(msg: &[u8]) -> Result<ConnectResponse> {
+impl FromProtocolMsg for ConnectResponse {
+    fn from_protocol_msg(msg: &[u8]) -> Result<ConnectResponse> {
         let mut c = Cursor::new(msg);
         let action = c.read_u32::<BigEndian>()?;
         ensure!(
@@ -139,7 +138,7 @@ pub struct AnnounceRequest {
     connection_id: u64,
     transaction_id: u32,
     info_hash: Sha1,
-    peer_id: Sha1,
+    peer_id: PeerId,
     downloaded: u64,
     left: u64,
     uploaded: u64,
@@ -162,20 +161,10 @@ impl AnnounceRequest {
         connect_response: &ConnectResponse,
         peer_id: Sha1,
     ) -> Result<AnnounceRequest> {
-        let info_hash: Sha1 = metainfo
-            .info()
-            .to_bencode()
-            .map_err(|e| anyhow!("Failed to re-bencode metainfo: {}", e))
-            .map(|bencoded_info| {
-                let mut hasher = Sha1Hasher::new();
-                hasher.input(bencoded_info);
-                hasher.result().into()
-            })?;
-
         Ok(AnnounceRequest {
             connection_id: connect_response.connection_id,
             transaction_id: connect_response.transaction_id,
-            info_hash,
+            info_hash: metainfo.info_hash().to_owned(),
             peer_id,
             downloaded: 0,
             left: metainfo.info().size(),
@@ -189,8 +178,8 @@ impl AnnounceRequest {
     }
 }
 
-impl ToUdpMsg for AnnounceRequest {
-    fn to_udp_msg(&self) -> Result<Vec<u8>> {
+impl ToProtocolMsg for AnnounceRequest {
+    fn to_protocol_msg(&self) -> Result<Vec<u8>> {
         let mut msg = Vec::new();
         msg.write_u64::<BigEndian>(self.connection_id).unwrap();
         msg.write_u32::<BigEndian>(AnnounceRequest::ACTION).unwrap();
@@ -211,6 +200,8 @@ impl ToUdpMsg for AnnounceRequest {
         msg.write_u32::<BigEndian>(self.key.unwrap_or(AnnounceRequest::DEFAULT_KEY))?;
         msg.write_i32::<BigEndian>(self.num_want.unwrap_or(AnnounceRequest::DEFAULT_NUM_WANT))?;
         msg.write_u16::<BigEndian>(self.port)?;
+
+        info!("announce_requeet: {}", msg.len());
 
         Ok(msg)
     }
@@ -233,9 +224,11 @@ impl AnnounceResponse {
     }
 }
 
-impl FromUdpMsg for AnnounceResponse {
-    fn from_udp_msg(msg: &[u8]) -> Result<Self>
-    where Self: Sized {
+impl FromProtocolMsg for AnnounceResponse {
+    fn from_protocol_msg(msg: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
         let mut c = Cursor::new(msg);
         let action = c.read_u32::<BigEndian>()?;
         ensure!(
@@ -253,15 +246,15 @@ impl FromUdpMsg for AnnounceResponse {
         let mut peers: Vec<PeerUrl> = Vec::new();
         let mut buf: [u8; 6] = [0u8; 6];
         while let Ok(_) = c.read_exact(&mut buf) {
-          peers.push(PeerUrl::from_udp_msg(&buf)?);
+            peers.push(PeerUrl::from_protocol_msg(&buf)?);
         }
 
         Ok(AnnounceResponse {
-          transaction_id,
-          interval,
-          leechers,
-          seeders,
-          peers,
+            transaction_id,
+            interval,
+            leechers,
+            seeders,
+            peers,
         })
     }
 }

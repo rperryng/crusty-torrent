@@ -1,13 +1,18 @@
 use std::convert::TryInto;
 
-extern crate url;
 use url::Url;
+
+use sha1::Digest;
+use sha1::Sha1 as Sha1Hasher;
+
+use anyhow::Result;
+use log::{info};
 
 use crate::bendy_ext::decode_option;
 use crate::type_ext::Sha1;
-use bendy::encoding;
 use bendy::decoding;
 use bendy::decoding::{FromBencode, Object, ResultExt};
+use bendy::encoding;
 use bendy::encoding::{SingleItemEncoder, ToBencode};
 
 #[derive(Debug)]
@@ -56,7 +61,9 @@ impl ToBencode for MultiFile {
 
             dict.emit_pair_with(b"path", |e| {
                 e.emit_list(|list| {
-                    for p in &self.path { list.emit(p)?; }
+                    for p in &self.path {
+                        list.emit(p)?;
+                    }
                     Ok(())
                 })?;
                 Ok(())
@@ -83,7 +90,9 @@ impl ToBencode for MultipleFiles {
             dict.emit_pair(b"name", &self.directory_name)?;
             dict.emit_pair_with(b"files", |e| {
                 e.emit_list(|list| {
-                    for f in &self.files { list.emit(f)? }
+                    for f in &self.files {
+                        list.emit(f)?
+                    }
                     Ok(())
                 })?;
                 Ok(())
@@ -106,7 +115,7 @@ impl ToBencode for FileInfo {
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         match self {
             FileInfo::Single(single) => encoder.emit(single)?,
-            FileInfo::Multi(multi) => encoder.emit(multi)?
+            FileInfo::Multi(multi) => encoder.emit(multi)?,
         }
 
         Ok(())
@@ -178,7 +187,8 @@ impl FromBencode for Info {
         }
 
         let name = name.ok_or_else(|| decoding::Error::missing_field("name"))?;
-        let piece_length = piece_length.ok_or_else(|| decoding::Error::missing_field("piece length"))?;
+        let piece_length =
+            piece_length.ok_or_else(|| decoding::Error::missing_field("piece length"))?;
         let pieces = pieces.ok_or_else(|| decoding::Error::missing_field("pieces"))?;
 
         let file_info = match (length, files) {
@@ -302,6 +312,7 @@ pub struct Metainfo {
     announce_url: Url,
     announce_list: Option<Vec<String>>,
     encoding: Option<String>,
+    info_hash: Sha1,
 }
 
 impl Metainfo {
@@ -311,6 +322,10 @@ impl Metainfo {
 
     pub fn announce_url(&self) -> &Url {
         &self.announce_url
+    }
+
+    pub fn info_hash(&self) -> &Sha1 {
+        &self.info_hash
     }
 }
 
@@ -336,15 +351,26 @@ impl FromBencode for Metainfo {
             }
         }
 
-        let info = info.ok_or_else(|| decoding::Error::missing_field("info"))?;
+        let info: Info = info.ok_or_else(|| decoding::Error::missing_field("info"))?;
         let announce = announce.ok_or_else(|| decoding::Error::missing_field("announce"))?;
         let announce_url = Url::parse(&announce)?;
+
+        let info_hash: Sha1 = info
+            .to_bencode()
+            .map_err(|e| decoding::Error::malformed_content(e))
+            .map(|bencoded_info| {
+                let mut hasher = Sha1Hasher::new();
+                hasher.input(bencoded_info);
+                let hash: Sha1 = hasher.result().into();
+                hash
+            })?;
 
         Ok(Metainfo {
             info,
             announce_url,
             announce_list,
             encoding,
+            info_hash,
         })
     }
 }
