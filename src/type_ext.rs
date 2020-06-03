@@ -1,5 +1,5 @@
 use anyhow::Result;
-use byteorder::WriteBytesExt;
+use std::net::ToSocketAddrs;
 
 use crate::messages::ToProtocolMsg;
 

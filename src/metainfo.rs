@@ -28,11 +28,7 @@ impl ToBencode for SingleFile {
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         encoder.emit_dict(|mut dict| {
             dict.emit_pair(b"length", self.length)?;
-
-            if let Some(md5) = &self.md5sum {
-                dict.emit_pair(b"md5sum", md5)?;
-            }
-
+            if let Some(md5) = &self.md5sum { dict.emit_pair(b"md5sum", md5)? }
             dict.emit_pair(b"name", &self.name)?;
 
             Ok(())
@@ -54,25 +50,11 @@ impl ToBencode for MultiFile {
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         encoder.emit_dict(|mut dict| {
             dict.emit_pair(b"length", self.length)?;
-
-            if let Some(md5) = &self.md5sum {
-                dict.emit_pair(b"md5sum", md5)?;
-            }
-
-            dict.emit_pair_with(b"path", |e| {
-                e.emit_list(|list| {
-                    for p in &self.path {
-                        list.emit(p)?;
-                    }
-                    Ok(())
-                })?;
-                Ok(())
-            })?;
+            if let Some(md5) = &self.md5sum { dict.emit_pair(b"md5sum", md5)? }
+            dict.emit_pair(b"path", &self.path)?;
 
             Ok(())
-        })?;
-
-        Ok(())
+        })
     }
 }
 
@@ -83,23 +65,14 @@ pub struct MultipleFiles {
 }
 
 impl ToBencode for MultipleFiles {
-    const MAX_DEPTH: usize = 5;
+    const MAX_DEPTH: usize = 3;
 
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         encoder.emit_dict(|mut dict| {
+            dict.emit_pair(b"files", &self.files)?;
             dict.emit_pair(b"name", &self.directory_name)?;
-            dict.emit_pair_with(b"files", |e| {
-                e.emit_list(|list| {
-                    for f in &self.files {
-                        list.emit(f)?
-                    }
-                    Ok(())
-                })?;
-                Ok(())
-            })?;
             Ok(())
-        })?;
-        Ok(())
+        })
     }
 }
 
@@ -110,15 +83,13 @@ pub enum FileInfo {
 }
 
 impl ToBencode for FileInfo {
-    const MAX_DEPTH: usize = 2;
+    const MAX_DEPTH: usize = 3;
 
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         match self {
-            FileInfo::Single(single) => encoder.emit(single)?,
-            FileInfo::Multi(multi) => encoder.emit(multi)?,
+            FileInfo::Single(single) => encoder.emit(single),
+            FileInfo::Multi(multi) => encoder.emit(multi),
         }
-
-        Ok(())
     }
 }
 
@@ -282,7 +253,7 @@ fn decode_files(value: Object) -> Result<Vec<MultiFile>, decoding::Error> {
 }
 
 impl ToBencode for Info {
-    const MAX_DEPTH: usize = 2;
+    const MAX_DEPTH: usize = 5;
 
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         encoder.emit_unsorted_dict(|dict| {
@@ -298,12 +269,8 @@ impl ToBencode for Info {
                 dict.emit_pair(b"private", *p as u32)?;
             }
 
-            dict.emit_pair(b"file_info", &self.file_info)?;
-
-            Ok(())
-        })?;
-
-        Ok(())
+            dict.emit_pair(b"file_info", &self.file_info)
+        })
     }
 }
 
@@ -355,6 +322,8 @@ impl FromBencode for Metainfo {
         let announce = announce.ok_or_else(|| decoding::Error::missing_field("announce"))?;
         let announce_url = Url::parse(&announce)?;
 
+        info!("producing info_hash from info");
+        info!("ok: {:?}", info.to_bencode());
         let info_hash: Sha1 = info
             .to_bencode()
             .map_err(|e| decoding::Error::malformed_content(e))
@@ -364,6 +333,7 @@ impl FromBencode for Metainfo {
                 let hash: Sha1 = hasher.result().into();
                 hash
             })?;
+        info!("producing info_hash");
 
         Ok(Metainfo {
             info,
