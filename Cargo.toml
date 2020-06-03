@@ -11,7 +11,10 @@ anyhow = "^1.0"
 bendy = "^0.2"
 byteorder = "^1"
 env_logger = "^0.7"
+hex = "^0.4"
 log = "^0.4"
-url = "^2.1"
 rand = "^0.7"
+reqwest = { version = "0.10", features = ["blocking"] }
 sha-1 = "^0.8"
+tokio = { version = "0.2", features = ["full"] }
+url = "^2.1"

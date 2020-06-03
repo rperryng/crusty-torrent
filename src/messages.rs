@@ -1,8 +1,8 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::io::{Cursor, Read};
 use std::net::Ipv4Addr;
 
-use anyhow::{Result, ensure};
+use anyhow::{anyhow, ensure, Result};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use log::info;
 use rand::prelude::*;
@@ -133,6 +133,20 @@ impl AnnounceRequestEvent {
     }
 }
 
+impl TryFrom<u32> for AnnounceRequestEvent {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(AnnounceRequestEvent::None),
+            1 => Ok(AnnounceRequestEvent::Competed),
+            2 => Ok(AnnounceRequestEvent::Started),
+            3 => Ok(AnnounceRequestEvent::Stopped),
+            _ => Err(anyhow!("No matching enum for u32: {}", value)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AnnounceRequest {
     connection_id: u64,
@@ -151,10 +165,10 @@ pub struct AnnounceRequest {
 
 impl AnnounceRequest {
     pub const ACTION: u32 = 1;
+    pub const DEFAULT_PORT: u16 = 6881;
     const DEFAULT_IP_ADDRESS: u32 = 0;
-    const DEFAULT_PORT: u16 = 6881;
     const DEFAULT_KEY: u32 = 0; // ??
-    const DEFAULT_NUM_WANT: i32 = 50;
+    const DEFAULT_NUM_WANT: i32 = -1;
 
     pub fn new(
         metainfo: &Metainfo,
@@ -169,10 +183,10 @@ impl AnnounceRequest {
             downloaded: 0,
             left: metainfo.info().size(),
             uploaded: 0,
-            event: AnnounceRequestEvent::None,
+            event: AnnounceRequestEvent::Started,
             port: AnnounceRequest::DEFAULT_PORT,
             ip_address: None,
-            key: None,
+            key: Some(random()),
             num_want: None,
         })
     }
@@ -201,9 +215,52 @@ impl ToProtocolMsg for AnnounceRequest {
         msg.write_i32::<BigEndian>(self.num_want.unwrap_or(AnnounceRequest::DEFAULT_NUM_WANT))?;
         msg.write_u16::<BigEndian>(self.port)?;
 
-        info!("announce_requeet: {}", msg.len());
-
         Ok(msg)
+    }
+}
+
+impl FromProtocolMsg for AnnounceRequest {
+    fn from_protocol_msg(msg: &[u8]) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut c = Cursor::new(msg);
+        let connection_id = c.read_u64::<BigEndian>()?;
+        let action = c.read_u32::<BigEndian>()?;
+        info!("AnnounceRequest::FromProtocolMsg, action: {}", action);
+
+        let transaction_id = c.read_u32::<BigEndian>()?;
+
+        let mut info_hash = [0u8; 20];
+        c.read_exact(&mut info_hash)?;
+
+        let mut peer_id = [0u8; 20];
+        c.read_exact(&mut peer_id)?;
+
+        let downloaded = c.read_u64::<BigEndian>()?;
+        let left = c.read_u64::<BigEndian>()?;
+        let uploaded = c.read_u64::<BigEndian>()?;
+
+        let event = AnnounceRequestEvent::try_from(c.read_u32::<BigEndian>()?)?;
+        let ip_address = c.read_u32::<BigEndian>()?;
+        let key = c.read_u32::<BigEndian>()?;
+        let num_want = c.read_i32::<BigEndian>()?;
+        let port = c.read_u16::<BigEndian>()?;
+
+        Ok(AnnounceRequest {
+            connection_id,
+            transaction_id,
+            info_hash,
+            peer_id,
+            downloaded,
+            left,
+            uploaded,
+            event,
+            port,
+            ip_address: Some(ip_address),
+            key: Some(key),
+            num_want: Some(num_want),
+        })
     }
 }
 

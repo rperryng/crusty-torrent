@@ -7,7 +7,7 @@ use crate::metainfo::Metainfo;
 use crate::type_ext::PeerId;
 
 use crate::messages::{FromProtocolMsg, ToProtocolMsg};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 
 use byteorder::{BigEndian, ReadBytesExt};
 use log::info;
@@ -19,14 +19,19 @@ pub fn get_peers(metainfo: &Metainfo, peer_id: &PeerId) -> Result<messages::Anno
     info!("UDP successfully binded to: {}", LOCAL_UDP_ADDRESS);
 
     let announce_url = metainfo.announce_url();
-    let host = announce_url.host_str().context("Failed to read host from metainfo announce_url")?;
-    let port = announce_url.port().context("Failed to read port from metainfo port")?;
+    let host = announce_url
+        .host_str()
+        .context("Failed to read host from metainfo announce_url")?;
+    let port = announce_url
+        .port()
+        .context("Failed to read port from metainfo port")?;
     let announce_url = format!("{}:{}", &host, &port);
 
-    info!("attempting to connect to announce_url: {}", announce_url);
-    socket
-        .connect(&announce_url)
-        .context(format!("couldn't connect to announce_url: {}", announce_url))?;
+    // info!("attempting to connect to announce_url: {}", announce_url);
+    socket.connect(&announce_url).context(format!(
+        "couldn't connect to announce_url: {}",
+        announce_url
+    ))?;
     info!("successfully connected to url");
 
     let connect_request = messages::ConnectRequest::new();
@@ -69,12 +74,12 @@ fn send_announce(
     peer_id: &PeerId,
     connect_response: &messages::ConnectResponse,
 ) -> Result<()> {
-    info!("sending announce request");
-    let request = messages::AnnounceRequest::new(metainfo, connect_response, peer_id.to_owned())?;
+    let announce_request =
+        messages::AnnounceRequest::new(metainfo, connect_response, peer_id.to_owned())?;
+    info!("sending announce request: {:?}", &announce_request);
 
     socket
-        .send(request.to_protocol_msg()?.as_slice())
+        .send(announce_request.to_protocol_msg()?.as_slice())
         .context("failed to send announce request")?;
-
     Ok(())
 }

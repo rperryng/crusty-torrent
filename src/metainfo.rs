@@ -1,12 +1,12 @@
 use std::convert::TryInto;
 
-use url::Url;
+use reqwest::Url;
 
 use sha1::Digest;
 use sha1::Sha1 as Sha1Hasher;
 
 use anyhow::Result;
-use log::{info};
+use log::info;
 
 use crate::bendy_ext::decode_option;
 use crate::type_ext::Sha1;
@@ -15,29 +15,14 @@ use bendy::decoding::{FromBencode, Object, ResultExt};
 use bendy::encoding;
 use bendy::encoding::{SingleItemEncoder, ToBencode};
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SingleFile {
     name: String,
     length: u32,
     md5sum: Option<String>,
 }
 
-impl ToBencode for SingleFile {
-    const MAX_DEPTH: usize = 1;
-
-    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
-        encoder.emit_dict(|mut dict| {
-            dict.emit_pair(b"length", self.length)?;
-            if let Some(md5) = &self.md5sum { dict.emit_pair(b"md5sum", md5)? }
-            dict.emit_pair(b"name", &self.name)?;
-
-            Ok(())
-        })?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MultiFile {
     length: u64,
     md5sum: Option<String>,
@@ -50,15 +35,16 @@ impl ToBencode for MultiFile {
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         encoder.emit_dict(|mut dict| {
             dict.emit_pair(b"length", self.length)?;
-            if let Some(md5) = &self.md5sum { dict.emit_pair(b"md5sum", md5)? }
+            if let Some(md5) = &self.md5sum {
+                dict.emit_pair(b"md5sum", md5)?
+            }
             dict.emit_pair(b"path", &self.path)?;
-
             Ok(())
         })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MultipleFiles {
     directory_name: String,
     files: Vec<MultiFile>,
@@ -76,24 +62,13 @@ impl ToBencode for MultipleFiles {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum FileInfo {
     Single(SingleFile),
     Multi(MultipleFiles),
 }
 
-impl ToBencode for FileInfo {
-    const MAX_DEPTH: usize = 3;
-
-    fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
-        match self {
-            FileInfo::Single(single) => encoder.emit(single),
-            FileInfo::Multi(multi) => encoder.emit(multi),
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Info {
     piece_length: u32,
     pieces: Vec<Sha1>, // string consisting of the concatenation of all 20-byte SHA1 hash values, one per piece (byte string, i.e. not urlencoded)
@@ -119,8 +94,6 @@ impl Info {
 }
 
 impl FromBencode for Info {
-    const EXPECTED_RECURSION_DEPTH: usize = 0;
-
     fn decode_bencode_object(object: Object) -> Result<Self, decoding::Error> {
         let mut piece_length = None;
         let mut pieces: Option<Vec<Sha1>> = None;
@@ -135,15 +108,16 @@ impl FromBencode for Info {
         let mut files: Vec<MultiFile> = Vec::new();
 
         let mut dict = object.try_into_dictionary()?;
+
         while let Some(pair) = dict.next_pair()? {
             match pair {
                 // Always present
                 (b"piece length", value) => piece_length = decode_option("piece length", value)?,
                 (b"pieces", value) => pieces = decode_pieces(value).map(Some)?,
                 (b"private", value) => private = decode_private(value).map(Some)?,
+                (b"name", value) => name = decode_option("name", value)?,
 
                 // Single-file mode specific
-                (b"name", value) => name = decode_option("name", value)?,
                 (b"length", value) => length = decode_option("length", value)?,
                 (b"md5sum", value) => md5sum = decode_option("md5sum", value)?,
 
@@ -257,23 +231,40 @@ impl ToBencode for Info {
 
     fn encode(&self, encoder: SingleItemEncoder) -> Result<(), encoding::Error> {
         encoder.emit_unsorted_dict(|dict| {
-            dict.emit_pair(b"piece_length", self.piece_length)?;
+            dict.emit_pair(b"piece length", self.piece_length)?;
 
-            let pieces = self.pieces.iter().fold(Vec::new(), |mut acc: Vec<u8>, sha1| {
-                acc.extend_from_slice(sha1);
-                acc
-            });
+            let pieces = self
+                .pieces
+                .iter()
+                .fold(Vec::new(), |mut acc: Vec<u8>, sha1| {
+                    acc.extend_from_slice(sha1);
+                    acc
+                });
             dict.emit_pair(b"pieces", pieces)?;
 
             if let Some(p) = &self.private {
                 dict.emit_pair(b"private", *p as u32)?;
             }
 
-            dict.emit_pair(b"file_info", &self.file_info)
+            match &self.file_info {
+                FileInfo::Single(file) => {
+                    dict.emit_pair(b"length", &file.length)?;
+                    if let Some(md5) = &file.md5sum {
+                        dict.emit_pair(b"md5sum", md5)?
+                    }
+                    dict.emit_pair(b"name", &file.name)?;
+                },
+                FileInfo::Multi(files) => {
+                    dict.emit_pair(b"files", &files.files)?;
+                    dict.emit_pair(b"name", &files.directory_name)?;
+                },
+            };
+            Ok(())
         })
     }
 }
 
+#[derive(Debug)]
 pub struct Metainfo {
     info: Info,
     announce_url: Url,
@@ -299,15 +290,29 @@ impl Metainfo {
 impl FromBencode for Metainfo {
     fn decode_bencode_object(object: Object) -> Result<Self, decoding::Error> {
         let mut info = None;
+        let mut info_raw_bytes: Option<&[u8]> = None;
         let mut announce: Option<String> = None;
         let mut announce_list = None;
         let mut encoding = None;
 
+        // let raw_bytes = object.try_into_dictionary()?.into_raw()?;
+        // let mut decoder = decoding::Decoder::new(raw_bytes.clone()).with_max_depth(10);
+        // info!("info bytes as str: {}", String::from_utf8_lossy(&raw_bytes));
+
         let mut dict = object.try_into_dictionary()?;
         while let Some(pair) = dict.next_pair()? {
             match pair {
-                (b"info", value) => info = decode_option("info", value)?,
                 (b"announce", value) => announce = decode_option("announce", value)?,
+                (b"info", value) => {
+                    // Workaround to copy underlying bytes of info dict
+                    info!("Info node found.  Attempting to copy bytes");
+                    info_raw_bytes = Some(value.try_into_dictionary()?.into_raw()?);
+
+                    info!("Got info raw bytes: {}", info_raw_bytes.unwrap().len());
+                    info = Some(Info::from_bencode(info_raw_bytes.unwrap())?);
+
+                    info!("successfully got info raw bytes");
+                },
 
                 (unknown_field, _) => {
                     info!(
@@ -322,18 +327,19 @@ impl FromBencode for Metainfo {
         let announce = announce.ok_or_else(|| decoding::Error::missing_field("announce"))?;
         let announce_url = Url::parse(&announce)?;
 
-        info!("producing info_hash from info");
-        info!("ok: {:?}", info.to_bencode());
-        let info_hash: Sha1 = info
-            .to_bencode()
-            .map_err(|e| decoding::Error::malformed_content(e))
-            .map(|bencoded_info| {
-                let mut hasher = Sha1Hasher::new();
-                hasher.input(bencoded_info);
-                let hash: Sha1 = hasher.result().into();
-                hash
-            })?;
-        info!("producing info_hash");
+        // let info_hash: Sha1 = info
+        //     .to_bencode()
+        //     .map_err(|e| decoding::Error::malformed_content(e))
+        //     .map(|bencoded_info| {
+        //         let mut hasher = Sha1Hasher::new();
+        //         hasher.input(bencoded_info);
+        //         let hash: Sha1 = hasher.result().into();
+        //         hash
+        //     })?;
+
+        let mut hasher = Sha1Hasher::new();
+        hasher.input(info_raw_bytes.unwrap());
+        let info_hash: Sha1 = hasher.result().into();
 
         Ok(Metainfo {
             info,

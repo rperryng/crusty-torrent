@@ -6,7 +6,7 @@ use crate::messages::{FromProtocolMsg, PeerUrl, ToProtocolMsg};
 use crate::metainfo::Metainfo;
 use crate::type_ext::{PeerId, Sha1};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use log::info;
 
@@ -40,7 +40,6 @@ pub fn download(metainfo: &Metainfo, peer: &PeerUrl, peer_id: &PeerId) -> Result
 
     Ok(())
 }
-
 
 fn send_handshake(stream: &mut TcpStream, metainfo: &Metainfo, peer_id: &PeerId) -> Result<()> {
     let handshake = Handshake::new(metainfo.info_hash().to_owned(), peer_id.to_owned());
@@ -85,14 +84,19 @@ impl ToProtocolMsg for Handshake {
 
 impl FromProtocolMsg for Handshake {
     fn from_protocol_msg(msg: &[u8]) -> Result<Self>
-    where Self: Sized {
+    where
+        Self: Sized,
+    {
         let mut c = Cursor::new(msg);
 
         let protocol_str_len = c.read_u8()?;
         let mut protocol_str = Vec::with_capacity(protocol_str_len as usize);
         c.read_exact(&mut protocol_str)?;
         if protocol_str != Handshake::PROTOCOL {
-            bail!("Returned handshake had unexpected protocol: {}", String::from_utf8_lossy(&protocol_str));
+            bail!(
+                "Returned handshake had unexpected protocol: {}",
+                String::from_utf8_lossy(&protocol_str)
+            );
         }
 
         // Reserved bits
