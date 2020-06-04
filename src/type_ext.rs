@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::net::ToSocketAddrs;
 
 use crate::messages::ToProtocolMsg;
 

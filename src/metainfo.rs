@@ -77,14 +77,6 @@ pub struct Info {
 }
 
 impl Info {
-    pub fn file_info(&self) -> &FileInfo {
-        &self.file_info
-    }
-
-    pub fn piece_length(&self) -> u32 {
-        self.piece_length
-    }
-
     pub fn size(&self) -> u64 {
         match &(self.file_info) {
             FileInfo::Single(file) => file.length as u64,
@@ -253,11 +245,11 @@ impl ToBencode for Info {
                         dict.emit_pair(b"md5sum", md5)?
                     }
                     dict.emit_pair(b"name", &file.name)?;
-                },
+                }
                 FileInfo::Multi(files) => {
                     dict.emit_pair(b"files", &files.files)?;
                     dict.emit_pair(b"name", &files.directory_name)?;
-                },
+                }
             };
             Ok(())
         })
@@ -292,12 +284,6 @@ impl FromBencode for Metainfo {
         let mut info = None;
         let mut info_raw_bytes: Option<&[u8]> = None;
         let mut announce: Option<String> = None;
-        let mut announce_list = None;
-        let mut encoding = None;
-
-        // let raw_bytes = object.try_into_dictionary()?.into_raw()?;
-        // let mut decoder = decoding::Decoder::new(raw_bytes.clone()).with_max_depth(10);
-        // info!("info bytes as str: {}", String::from_utf8_lossy(&raw_bytes));
 
         let mut dict = object.try_into_dictionary()?;
         while let Some(pair) = dict.next_pair()? {
@@ -312,7 +298,7 @@ impl FromBencode for Metainfo {
                     info = Some(Info::from_bencode(info_raw_bytes.unwrap())?);
 
                     info!("successfully got info raw bytes");
-                },
+                }
 
                 (unknown_field, _) => {
                     info!(
@@ -344,8 +330,8 @@ impl FromBencode for Metainfo {
         Ok(Metainfo {
             info,
             announce_url,
-            announce_list,
-            encoding,
+            announce_list: None,
+            encoding: None,
             info_hash,
         })
     }

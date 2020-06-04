@@ -87,14 +87,6 @@ pub struct ConnectResponse {
 
 impl ConnectResponse {
     pub const ACTION: u32 = 0;
-
-    pub fn transaction_id(&self) -> u32 {
-        self.transaction_id
-    }
-
-    pub fn connection_id(&self) -> u64 {
-        self.connection_id
-    }
 }
 
 impl FromProtocolMsg for ConnectResponse {

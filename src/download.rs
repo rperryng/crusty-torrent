@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 use std::io::{Cursor, Write};
-use std::net::{TcpStream, UdpSocket};
+use std::net::TcpStream;
 
 use crate::messages::{FromProtocolMsg, PeerUrl, ToProtocolMsg};
 use crate::metainfo::Metainfo;
@@ -13,18 +13,17 @@ use log::info;
 pub fn download(metainfo: &Metainfo, peer: &PeerUrl, peer_id: &PeerId) -> Result<()> {
     info!("download init");
 
-    let url = format!("{}:{}", peer.ip(), peer.port());
-    info!("(TCP) Attempting to connect to: {}", url);
+    info!("Attempting to connect to: {:?}", (peer.ip(), peer.port()));
     let mut stream = TcpStream::connect((peer.ip(), peer.port()))?;
-    info!("(TCP) connected");
+    info!("connected");
 
+    info!("sending handshake");
     send_handshake(&mut stream, metainfo, peer_id)?;
+    info!("handshake sent");
 
     let mut is_handshake = true;
     let mut buf = [0u8; 1024];
-    while let Ok(bytes_received) = stream.read(&mut buf) {
-        let mut c = Cursor::new(&buf[..]);
-
+    while let Ok(_bytes_received) = stream.read(&mut buf) {
         if is_handshake {
             let handshake = Handshake::from_protocol_msg(&buf)?;
             info!("Got handshake: {:?}", handshake);

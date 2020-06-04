@@ -16,7 +16,6 @@ use crate::util::gen_peer_id;
 
 use anyhow::{bail, Result};
 use bendy::decoding::FromBencode;
-use bendy::encoding::ToBencode;
 use log::info;
 
 const TORRENT_PATH: &str = "gimp-2.10.18-setup-2.exe.torrent";
@@ -32,11 +31,9 @@ fn main() -> Result<()> {
     let contents = fs::read(TORRENT_PATH).unwrap();
     let metainfo = Metainfo::from_bencode(contents.as_slice())
         .or_else(|e| bail!("failed de-serializing metainfo bencode.  Error: {}", e))?;
-    info!("Parsed metainfo file: {:?}", &metainfo);
-
-    let peer_id = gen_peer_id();
 
     // Get peers from announce url
+    let peer_id = gen_peer_id();
     let announce_response = get_peers(&metainfo, &peer_id)?;
     let peer = announce_response
         .peers()
